@@ -50,3 +50,8 @@ plt.plot(history.history["accuracy"], label="train")
 plt.plot(history.history["val_accuracy"], label="val")
 plt.legend()
 plt.show()
+
+print("Final Train Accuracy:", history.history["accuracy"][-1])
+print("Final Train Loss:", history.history["loss"][-1])
+print("Final Val Accuracy:", history.history["val_accuracy"][-1])
+print("Final Val Loss:", history.history["val_loss"][-1])
