@@ -1,0 +1,651 @@
+from pathlib import Path
+
+content = r"""
+IMAGE PROCESSING OPEN-BOOK NOTES
+Based on the provided CV lab references:
+- Lab 1: Digital image basics, grayscale, histogram, negative, thresholding. fileciteturn0file0
+- Lab 2: Negative, log, gamma, intensity slicing, combinations, bit-depth effects, binary operations. fileciteturn0file1
+- Lab 3: Convolution, mean/gaussian smoothing, sharpening, separable filters, median filter. fileciteturn0file2
+
+==================================================
+1) CORE IMAGE INTENSITY TRANSFORMATIONS
+==================================================
+
+These operate on pixel values directly.
+
+1.1 Negative transformation
+Formula:
+s = L - 1 - r
+For 8-bit images: s = 255 - r
+
+Effect:
+- Dark pixels become bright.
+- Bright pixels become dark.
+- Histogram is mirrored around the center.
+
+Best for:
+- Medical/remote sensing style images where bright background inversion helps.
+- Highlighting details in dark regions.
+- Visual inspection when object/background contrast is low.
+
+Not ideal for:
+- Natural photos where inversion looks unnatural.
+- Images where semantic meaning depends on original polarity.
+
+Important rule:
+- Negative does not “remove noise”; it only flips intensities.
+
+Source link:
+Lab 1 covers the negative formula explicitly. fileciteturn0file0
+Lab 2 asks to compare original and negative histograms. fileciteturn0file1
+
+
+1.2 Log transformation
+Formula:
+s = c * log(1 + r)
+
+Purpose:
+- Compresses dynamic range.
+- Expands dark regions.
+- Compresses very bright values.
+
+Why it works:
+- The log curve rises steeply at low intensities and flattens at high intensities.
+- So dark details get stretched more than bright details.
+
+Effect of c:
+- Larger c increases overall brightness and stretch.
+- Too large c can saturate values and wash out highlights.
+- Smaller c gives a milder effect.
+
+Brightens or darkens?
+- Usually brightens dark areas.
+- Overall output may look brighter if c is large enough.
+
+Best for:
+- Dark images.
+- Images with bright highlights and hidden shadow details.
+- Dynamic range compression.
+
+Pitfall:
+- Can over-amplify noise in dark regions if the image is very noisy.
+
+Referenced in Lab 2. fileciteturn0file1
+
+
+1.3 Gamma transformation / power-law
+Formula:
+s = c * r^γ
+where r is normalized to [0,1] for practical use.
+
+Gamma rules:
+- γ < 1  → brightens image
+- γ = 1  → no change
+- γ > 1  → darkens image
+
+Typical values:
+- 0.4, 0.5, 0.6 → strong brightening
+- 1.0 → identity
+- 1.5, 2.2 → darkening
+
+Why:
+- For 0 < r < 1:
+  - raising to a power less than 1 increases the value
+  - raising to a power greater than 1 decreases the value
+
+Best for:
+- Display correction
+- Brightening underexposed images
+- Reducing brightness in overexposed images
+
+Pitfall:
+- Direct RGB gamma can distort colors if applied channel-wise.
+- Better to apply to intensity channel in HSV or LAB.
+
+Referenced in Lab 2. fileciteturn0file1
+
+
+1.4 Contrast stretching
+Purpose:
+- Expand a narrow intensity range to a wider range.
+
+General form:
+s = (r - r_min) * (L - 1) / (r_max - r_min)
+
+Effect:
+- Dark parts become darker and bright parts become brighter if the input range is compressed.
+- Overall contrast increases.
+
+Best for:
+- Low-contrast images
+- Images that look flat or washed out
+
+Pitfall:
+- Can amplify noise if the input range is chosen badly.
+
+Used in Lab 2 combinations. fileciteturn0file1
+
+
+1.5 Intensity slicing
+Goal:
+- Highlight a specific gray-level interval.
+
+Two common styles:
+A) With background kept gray
+- Target range gets highlighted.
+- Other intensities become a neutral gray.
+
+B) With background suppressed
+- Target range is bright.
+- Everything else becomes black or white depending on design.
+
+Best for:
+- Medical images
+- Remote sensing
+- Finding a tissue range, vegetation, water, or a suspect object class
+
+Compared with thresholding:
+- Thresholding is a hard binary split.
+- Slicing preserves more range-specific information.
+
+Referenced in Lab 2. fileciteturn0file1
+
+
+1.6 Bit slicing / bit-plane slicing
+Idea:
+- Separate an image into binary bit-planes from LSB to MSB.
+
+Meaning:
+- LSB planes contain fine detail and mostly noise.
+- MSB planes contain the major structure and most visual information.
+
+Typical observations:
+- Highest bit planes carry object shape.
+- Lowest bit planes often look noisy.
+
+Use cases:
+- Compression
+- Watermarking
+- Understanding image representation
+- Exam questions on binary significance
+
+Key exam fact:
+- Removing lower bit planes reduces detail.
+- Keeping only higher bit planes preserves recognizable structure.
+
+Linked to Lab 2 bit-depth reduction ideas. fileciteturn0file1
+
+
+1.7 Bit-depth reduction
+Example:
+- 8-bit → 4-bit, 3-bit, 2-bit
+
+Effect:
+- Fewer intensity levels.
+- Banding / contouring becomes visible.
+- Smooth gradients turn into steps.
+
+Why banding occurs:
+- Continuous tones are quantized into too few levels.
+
+Best for:
+- Compression or hardware-limited display contexts
+- Not good for quality preservation
+
+Referenced in Lab 2. fileciteturn0file1
+
+
+==================================================
+2) FILTERS FOR NOISE
+==================================================
+
+2.1 Mean filter / averaging filter
+What it does:
+- Replaces each pixel by the average of neighboring pixels.
+
+Best for:
+- Gaussian noise
+- Small random fluctuations
+
+Effect:
+- Smooths the image.
+- Reduces high-frequency noise.
+- Blurs edges.
+
+Kernel examples:
+- 3x3 mean filter
+- 5x5 mean filter
+
+Kernel size rule:
+- Bigger kernel = more smoothing = more blur.
+
+Not ideal for:
+- Salt-and-pepper noise
+- Edge preservation
+
+Referenced in Lab 3.
+
+
+2.2 Gaussian filter
+What it does:
+- Weighted averaging where center pixels matter more than far pixels.
+
+Best for:
+- Gaussian noise
+- Natural smoothing
+- Preprocessing before edge detection
+
+Effect:
+- Less harsh blur than a plain mean filter.
+- Preserves structures slightly better than mean filter.
+
+Sigma rule:
+- Small sigma = mild smoothing
+- Large sigma = stronger smoothing and more blur
+
+Kernel size rule:
+- Larger kernel generally means more smoothing.
+
+Referenced in Lab 3. 
+
+
+2.3 Median filter
+What it does:
+- Replaces a pixel by the median of neighborhood values.
+
+Best for:
+- Salt-and-pepper noise
+- Impulse noise
+
+Why it works:
+- Outliers like 0 and 255 do not dominate the median.
+
+Effect:
+- Removes isolated spikes very well.
+- Preserves edges better than mean filter.
+
+Why it is not convolution:
+- It is nonlinear.
+- It does not compute a weighted sum.
+
+Kernel size rule:
+- Bigger window removes more noise but can remove detail.
+
+Referenced in Lab 3. fileciteturn0file2
+
+
+2.4 Min filter
+What it does:
+- Replaces each pixel with the minimum value in the neighborhood.
+
+Best for:
+- Removing bright impulse noise
+- Expanding dark regions
+- Erosion-like behavior
+
+Effect:
+- Darkens image.
+- Shrinks bright objects.
+- Useful when noise appears as bright specks.
+
+Not ideal for:
+- General smoothing
+- Preserving bright detail
+
+Exam clue:
+- Min filter is like a strong darkening morphological effect.
+
+2.5 Max filter
+What it does:
+- Replaces each pixel with the maximum value in the neighborhood.
+
+Best for:
+- Removing dark impulse noise
+- Expanding bright regions
+- Dilation-like behavior
+
+Effect:
+- Brightens image.
+- Enlarges bright objects.
+- Useful when noise appears as black specks.
+
+2.6 Contraharmonic mean filter
+Formula:
+g = sum(f^(Q+1)) / sum(f^Q)
+
+Where Q controls the behavior.
+
+Important Q rules:
+- Q > 0  → good for salt noise (bright impulse noise)
+- Q < 0  → good for pepper noise (dark impulse noise)
+- Q = 0  → becomes arithmetic mean
+- Q = -1 → harmonic mean
+- Larger positive Q gives more emphasis to large values
+- More negative Q gives more emphasis to small values
+
+Practical interpretation:
+- Use positive Q when image has white dots.
+- Use negative Q when image has black dots.
+
+Important caution:
+- It is sensitive to zeros when Q is negative.
+- Can fail or behave badly if the denominator becomes unstable.
+
+This is one of the most important exam filters for impulse noise.
+
+2.7 Alpha-trimmed mean filter
+Idea:
+- Sort values in the neighborhood.
+- Remove the lowest d/2 and highest d/2 values.
+- Average the remaining values.
+
+Purpose:
+- Combines mean filter and median-like robustness.
+
+Best for:
+- Mixed noise
+- When both Gaussian-like noise and impulse noise are present
+
+Effect:
+- Less sensitive to extreme outliers than mean filter.
+- Less aggressive than median if alpha is small.
+
+Parameter rule:
+- Larger alpha trim removes more extremes.
+- Too much trimming may remove detail.
+
+Exam memory:
+- Mean = smoothest but weakest against outliers.
+- Median = strongest against impulses.
+- Alpha-trim = compromise.
+- Contraharmonic = directional impulse-noise handling using Q.
+
+==================================================
+3) THRESHOLDING AND SEGMENTATION
+==================================================
+
+3.1 Simple threshold
+Rule:
+- If pixel > T, set to white.
+- Else set to black.
+
+Best for:
+- Images with clear foreground/background separation
+
+Weakness:
+- Fails under uneven lighting.
+
+Referenced in Lab 1. fileciteturn0file0
+
+
+3.2 Adaptive threshold
+Idea:
+- Threshold varies locally across the image.
+
+Why useful:
+- Works better when illumination is not uniform.
+
+Common forms:
+- Mean adaptive threshold
+- Gaussian adaptive threshold
+
+Best for:
+- Documents
+- Shadows
+- Unevenly lit scenes
+
+Key rule:
+- Local thresholding is better than global thresholding when brightness changes across the image.
+
+Referenced in Lab 1 assignment on thresholding and Lab 2 binary operations. fileciteturn0file0 fileciteturn0file1
+
+
+3.3 Otsu thresholding
+Idea:
+- Automatically selects threshold based on histogram separation.
+
+Best for:
+- Bimodal grayscale histograms
+
+Exam point:
+- Works when foreground and background peaks are separated.
+
+Referenced in Lab 2 binary operations. fileciteturn0file1
+
+
+==================================================
+4) MORPHOLOGICAL OPERATIONS
+==================================================
+
+4.1 Erosion
+Effect:
+- Shrinks bright regions.
+- Removes small bright noise.
+- Breaks thin connections.
+
+Best for:
+- Removing small white specks
+- Separating connected bright objects
+
+4.2 Dilation
+Effect:
+- Expands bright regions.
+- Fills small holes.
+- Connects nearby components.
+
+Best for:
+- Thickening objects
+- Recovering broken object parts
+
+4.3 Opening
+Definition:
+- Erosion followed by dilation
+
+Best for:
+- Removing small bright noise
+- Preserving larger structures better than erosion alone
+
+4.4 Closing
+Definition:
+- Dilation followed by erosion
+
+Best for:
+- Filling small black holes
+- Closing small gaps
+
+Referenced conceptually across threshold/binary operations in Lab 2. fileciteturn0file1
+
+
+==================================================
+5) SHARPENING / EDGE ENHANCEMENT
+==================================================
+
+5.1 Laplacian filter
+Nature:
+- Second derivative operator
+
+Effect:
+- Highlights rapid intensity changes.
+- Useful for edges and sharpening.
+
+Typical kernel:
+- Center positive or negative depending on convention.
+
+Best for:
+- Edge enhancement
+- Sharpening after blur
+
+Weakness:
+- Sensitive to noise.
+
+Referenced in Lab 3. fileciteturn0file2
+
+
+5.2 Unsharp masking
+Idea:
+- Blur image
+- Subtract blurred version from original
+- Add scaled detail back
+
+Effect:
+- Makes edges appear sharper.
+
+Best for:
+- Image enhancement
+- Slight blur correction
+
+Weakness:
+- Can exaggerate noise and halos.
+
+Referenced in Lab 3. fileciteturn0file2
+
+
+==================================================
+6) TRANSFORMATIONS AND WHEN THEY BRIGHTEN OR DARKEN
+==================================================
+
+Transformation | Brighten? | Darken?
+Negative       | neither in direct sense; it flips intensities | neither
+Log            | usually brightens dark regions | compresses bright regions
+Gamma < 1      | brightens | no
+Gamma = 1      | unchanged | unchanged
+Gamma > 1      | darkens | yes
+Contrast stretching | increases contrast and may brighten some regions | may darken others depending on mapping
+
+Very short memory trick:
+- log = shadow booster
+- gamma < 1 = brighten
+- gamma > 1 = darken
+- negative = invert
+- contrast stretching = widen dynamic range
+
+Referenced in Lab 2. fileciteturn0file1
+
+
+==================================================
+7) WHICH FILTER FOR WHICH NOISE
+==================================================
+
+Noise type | Best filter
+Gaussian noise | Mean filter, Gaussian filter
+Salt-and-pepper noise | Median filter, contraharmonic mean filter, alpha-trimmed mean filter
+Bright impulse noise | Min/Max depending on polarity; contraharmonic with Q > 0 for salt
+Dark impulse noise | Contraharmonic with Q < 0 for pepper
+Mixed noise | Alpha-trimmed mean filter, median filter
+General smoothing | Gaussian filter
+Need edge preservation | Median filter better than mean
+Need fast basic blur | Mean filter
+
+Important warnings:
+- Mean filter blurs edges.
+- Gaussian is smoother than mean.
+- Median is strongest for impulse noise.
+- Contraharmonic depends critically on Q.
+- Alpha-trimmed mean is a compromise.
+
+Referenced by Lab 3 smoothing and median comparison. fileciteturn0file2
+
+
+==================================================
+8) WHICH TRANSFORMATION FOR WHICH TASK
+==================================================
+
+Task | Best choice
+Improve dark details | Log transform, gamma < 1
+Dim overall dark image | Gamma < 1
+Reduce brightness | Gamma > 1
+Highlight a specific intensity range | Intensity slicing
+Invert image appearance | Negative
+Expand low-contrast image | Contrast stretching
+Remove impulse noise | Median / contraharmonic / alpha-trim
+Reduce Gaussian noise | Gaussian blur / mean filter
+Sharpen blurred image | Laplacian / unsharp masking
+Separate foreground/background | Thresholding / adaptive threshold
+Handle uneven lighting | Adaptive threshold
+Reduce tiny bright specks | Erosion / min filter
+Fill tiny black holes | Dilation / max filter / closing
+
+==================================================
+9) KERNEL / WINDOW RULES YOU SHOULD REMEMBER
+==================================================
+
+Mean filter:
+- Bigger kernel = more blur
+
+Gaussian filter:
+- Bigger kernel or higher sigma = more smoothing
+
+Median filter:
+- Bigger window = more impulse noise removal but more detail loss
+
+Contraharmonic:
+- Q > 0 helps bright impulses
+- Q < 0 helps dark impulses
+
+Alpha-trim:
+- More trimming = more robustness but more detail loss
+
+Morphology:
+- Larger structuring element = stronger effect
+
+==================================================
+10) IMPORTANT HISTOGRAM FACTS
+==================================================
+
+Negative:
+- Histogram gets mirrored.
+
+Log:
+- Dark bins spread out.
+- Bright bins compress.
+
+Gamma < 1:
+- Histogram shifts toward brighter intensities.
+
+Gamma > 1:
+- Histogram shifts toward darker intensities.
+
+Contrast stretching:
+- Histogram expands to use more of the available range.
+
+Bit-depth reduction:
+- Histogram becomes quantized into fewer levels.
+
+
+
+==================================================
+11) COLOR IMAGE WARNING
+==================================================
+
+Applying intensity transforms directly to RGB channels can distort color balance.
+
+Better idea:
+- Convert to HSV or LAB.
+- Apply transform to the intensity-like channel only.
+
+Reason:
+- Human vision cares more about luminance than raw RGB channel-wise transforms.
+
+
+==================================================
+12) CONVOLUTION VS NONLINEAR FILTERS
+==================================================
+
+Convolution-based filters:
+- Mean
+- Gaussian
+- Sobel
+- Laplacian
+- Sharpening kernels
+
+Nonlinear filters:
+- Median
+- Min
+- Max
+- Contraharmonic
+- Alpha-trimmed mean
+
+Key exam line:
+- Median is not a convolution because it does not compute a weighted linear sum.
+
+Referenced in Lab 3. fileciteturn0file2
