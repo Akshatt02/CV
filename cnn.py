@@ -6,7 +6,11 @@ from tensorflow.keras import layers, models
 # Load dataset
 ds_train, ds_test = tfds.load(
     "cats_vs_dogs",
-    split=["train[:80%]", "train[80%:90%]"],
+    split = [
+    "train[:70%]",   # training
+    "train[70%:85%]", # validation
+    "train[85%:]"     # test
+    ],
     as_supervised=True,
 )
 
