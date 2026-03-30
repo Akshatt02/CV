@@ -1,240 +1,359 @@
 # ==================== IMPORTS ====================
 
-import numpy as np              # Used for matrix operations (images are matrices)
-import cv2                     # OpenCV for image processing
-import matplotlib.pyplot as plt  # For visualization
+import cv2
+# OpenCV library → provides optimized image processing functions (filters, transforms, etc.)
 
-# ==================== UTILITY FUNCTION ====================
+import numpy as np
+# NumPy → used because images are stored as matrices (arrays of pixel values)
 
-# Function to display images nicely
-def show(img, title):
-    plt.imshow(img, cmap='gray')   # Use grayscale colormap
+import matplotlib.pyplot as plt
+# Matplotlib → used to display images in notebooks (cv2.imshow doesn’t work well here)
+
+from skimage.util import random_noise
+# Function to artificially add different types of noise (Gaussian, salt, pepper, etc.)
+
+
+# ==================== DISPLAY FUNCTION ====================
+
+def show(img, title=""):
+    plt.figure(figsize=(4,4))
+    # Create a new figure window with fixed size (so images look consistent)
+
+    plt.imshow(img, cmap='gray')
+    # Display image → cmap='gray' ensures grayscale images are shown correctly
+
     plt.title(title)
-    plt.axis('off')                # Remove axis for cleaner display
-    plt.show()
+    # Add title for clarity
+
+    plt.axis('off')
+    # Remove x/y axes (cleaner visualization)
 
 
 # ==================== ASSIGNMENT 1 ====================
-# Custom convolution implementation
 
-def convolution2d(image, kernel):
-    h, w = image.shape             # Image height & width
-    kh, kw = kernel.shape          # Kernel size
+img = cv2.imread('img.png', 0) / 255.0
+# Read image in grayscale (0 → single channel)
+# Divide by 255 → normalize pixel values from [0,255] → [0,1]
+# WHY: random_noise expects float images in [0,1]
 
-    # Padding ensures output size = input size
-    pad_h, pad_w = kh // 2, kw // 2
+noisy = random_noise(img, mode='gaussian', mean=0, var=0.05)
+# Add Gaussian noise:
+# mean=0 → noise centered around 0
+# var=0.05 → controls noise intensity
 
-    # Add zero padding around image borders
-    padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant')
+noisy = (noisy * 255).astype(np.uint8)
+# Convert back to standard image format:
+# Multiply by 255 → scale back to [0,255]
+# astype(uint8) → convert to integer pixel format
 
-    # Initialize output image (float to avoid overflow)
-    output = np.zeros_like(image, dtype=np.float32)
+filtered = cv2.blur(noisy, (5,5))
+# Apply arithmetic mean filter:
+# Each pixel = average of its 5x5 neighborhood
+# WHY: reduces Gaussian noise by smoothing
 
-    # Slide kernel across image
-    for i in range(h):
-        for j in range(w):
-            region = padded[i:i+kh, j:j+kw]  # Extract local patch
-            output[i, j] = np.sum(region * kernel)  # Convolution operation
-
-    return output
-
-
-# Load grayscale image
-img = cv2.imread("landscape.jpg", cv2.IMREAD_GRAYSCALE)
-
-# Averaging kernel (blur)
-kernel = np.ones((3, 3), dtype=np.float32) / 9
-
-# Apply custom convolution
-out_custom = convolution2d(img, kernel)
-
-# Apply OpenCV convolution (optimized)
-out_library = cv2.filter2D(img, -1, kernel)
-
-# Display results
-show(img, "Original Image")
-show(out_custom, "Custom Convolution Output")
-show(out_library, "cv2.filter2D Output")
-
-# Compare outputs
-diff = np.abs(out_custom - out_library)
-print(f"Mean Absolute Difference: {np.mean(diff):.4f}")
-show(diff, "Difference (Custom - Library)")
+show(img, "Original")
+show(noisy, "Gaussian Noise")
+show(filtered, "Arithmetic Mean Filter")
 
 
 # ==================== ASSIGNMENT 2 ====================
 
-# Add Gaussian noise (smooth random noise)
-def add_gaussian_noise(img, mean=0, std=20):
-    noise = np.random.normal(mean, std, img.shape)
-    noisy = np.clip(img + noise, 0, 255).astype(np.uint8)  # Keep valid pixel range
-    return noisy
+def geometric_mean_filter(img, k=3):
+    img = img.astype(np.float32) + 1
+    # Convert to float for precision
+    # Add 1 → prevents log(0) which is undefined
+
+    kernel = np.ones((k,k))
+    # Create k×k window (all ones)
+
+    log_img = np.log(img)
+    # Convert multiplication → addition (log domain trick)
+
+    filtered = cv2.filter2D(log_img, -1, kernel)
+    # Apply convolution in log space
+
+    return np.exp(filtered / (k*k)).astype(np.uint8)
+    # Divide by number of elements → average in log domain
+    # exp() → convert back from log domain
+    # This gives geometric mean
 
 
-# Add salt & pepper noise (random black/white pixels)
-def add_salt_pepper_noise(img, prob=0.02):
-    noisy = img.copy()
-    rnd = np.random.rand(*img.shape)
+filtered = geometric_mean_filter(noisy, 3)
 
-    noisy[rnd < prob/2] = 0        # Pepper (black)
-    noisy[rnd > 1 - prob/2] = 255  # Salt (white)
-
-    return noisy
-
-
-# Generate noisy images
-gaussian_noisy = add_gaussian_noise(img)
-sp_noisy = add_salt_pepper_noise(img)
-
-
-# Mean filters (simple blur)
-mean_3 = cv2.blur(gaussian_noisy, (3, 3))
-mean_5 = cv2.blur(gaussian_noisy, (5, 5))
-
-# Gaussian filters (weighted blur)
-gauss_05 = cv2.GaussianBlur(gaussian_noisy, (5, 5), 0.5)
-gauss_1  = cv2.GaussianBlur(gaussian_noisy, (5, 5), 1)
-gauss_2  = cv2.GaussianBlur(gaussian_noisy, (5, 5), 2)
-
-
-# PSNR calculation (quality metric)
-def psnr(original, denoised):
-    mse = np.mean((original - denoised) ** 2)
-    if mse == 0:
-        return float('inf')  # Perfect match
-    return 10 * np.log10((255 ** 2) / mse)
-
-print("PSNR Values:")
-print("Mean 3x3:", psnr(img, mean_3))
-print("Mean 5x5:", psnr(img, mean_5))
-print("Gaussian σ=0.5:", psnr(img, gauss_05))
-print("Gaussian σ=1:", psnr(img, gauss_1))
-print("Gaussian σ=2:", psnr(img, gauss_2))
-
-
-# Display results
-def show_multiple(images, titles):
-    plt.figure(figsize=(12, 6))
-    for i, (im, title) in enumerate(zip(images, titles)):
-        plt.subplot(2, 3, i+1)
-        plt.imshow(im, cmap='gray')
-        plt.title(title)
-        plt.axis('off')
-    plt.show()
-
-
-show_multiple(
-    [img, gaussian_noisy, mean_3, mean_5, gauss_1, gauss_2],
-    ["Original", "Gaussian Noise", "Mean 3x3", "Mean 5x5", "Gaussian σ=1", "Gaussian σ=2"]
-)
+show(noisy, "Gaussian Noise")
+show(filtered, "Geometric Mean Filter")
 
 
 # ==================== ASSIGNMENT 3 ====================
 
-# Blur image to remove noise
-blurred = cv2.GaussianBlur(img, (5, 5), 1.0)
+def harmonic_mean_filter(img, k=3):
+    img = img.astype(np.float32)
+    # Convert to float for division operations
 
-# Laplacian kernel (edge detector)
-laplacian_kernel = np.array([
-    [0, -1, 0],
-    [-1,  4, -1],
-    [0, -1, 0]
-])
+    kernel = np.ones((k,k))
 
-# Extract edges
-edges = cv2.filter2D(blurred, -1, laplacian_kernel)
+    denom = cv2.filter2D(1.0 / (img + 1e-6), -1, kernel)
+    # Compute sum of reciprocals:
+    # 1e-6 prevents division by zero
 
-# Laplacian sharpening (add edges back)
-k_lap = 1.0
-laplacian_sharp = np.clip(blurred + k_lap * edges, 0, 255).astype(np.uint8)
+    return ((k*k) / denom).astype(np.uint8)
+    # Harmonic mean formula:
+    # n / (sum of reciprocals)
 
-# Unsharp masking (classic sharpening)
-k1, k2, k3 = 0.5, 1.0, 1.5
 
-unsharp_05 = np.clip(img + k1 * (img - blurred), 0, 255).astype(np.uint8)
-unsharp_10 = np.clip(img + k2 * (img - blurred), 0, 255).astype(np.uint8)
-unsharp_15 = np.clip(img + k3 * (img - blurred), 0, 255).astype(np.uint8)
+salt = random_noise(img, mode='salt', amount=0.1)
+# Add salt noise → random white pixels
 
-# Display sharpening results
-titles = ["Original", "Blurred", "Laplacian Sharpened", "Unsharp k=0.5", "Unsharp k=1.0", "Unsharp k=1.5"]
-images = [img, blurred, laplacian_sharp, unsharp_05, unsharp_10, unsharp_15]
+salt = (salt * 255).astype(np.uint8)
 
-plt.figure(figsize=(12, 6))
-for i in range(6):
-    plt.subplot(2, 3, i+1)
-    plt.imshow(images[i], cmap='gray')
-    plt.title(titles[i])
-    plt.axis('off')
-plt.tight_layout()
-plt.show()
+filtered = harmonic_mean_filter(salt, 3)
+
+show(salt, "Salt Noise")
+show(filtered, "Harmonic Mean Filter")
 
 
 # ==================== ASSIGNMENT 4 ====================
 
-import time
+def contraharmonic_mean(img, k=3, Q=1.5):
+    img = img.astype(np.float32)
 
-# Direct 2D Gaussian filtering
-start = time.time()
-direct = cv2.GaussianBlur(img, (5, 5), 1)
-time_direct = time.time() - start
+    kernel = np.ones((k,k))
 
-# Separable Gaussian (1D + 1D → faster)
-g1d = cv2.getGaussianKernel(5, 1)
+    num = cv2.filter2D(img**(Q+1), -1, kernel)
+    # Numerator → sum(x^(Q+1))
 
-start = time.time()
-separable = cv2.sepFilter2D(img, -1, g1d, g1d)
-time_separable = time.time() - start
+    den = cv2.filter2D(img**Q + 1e-6, -1, kernel)
+    # Denominator → sum(x^Q)
+    # 1e-6 prevents division by zero
 
-# Compare results
-difference = cv2.absdiff(direct, separable)
-max_diff = np.max(difference)
+    return (num / den).astype(np.uint8)
+    # Final contraharmonic mean result
 
-print("Execution Time Comparison:")
-print(f"Direct 2D Gaussian   : {time_direct:.6f} seconds")
-print(f"Separable Gaussian   : {time_separable:.6f} seconds")
-print(f"Maximum pixel difference: {max_diff}")
 
-# Display comparison
-titles = ["Original", "Direct Gaussian", "Separable Gaussian", "Difference"]
-images = [img, direct, separable, difference]
+pepper = random_noise(img, mode='pepper', amount=0.1)
+# Add pepper noise → random black pixels
 
-plt.figure(figsize=(10, 6))
-for i in range(4):
-    plt.subplot(2, 2, i+1)
-    plt.imshow(images[i], cmap='gray')
-    plt.title(titles[i])
-    plt.axis('off')
-plt.tight_layout()
-plt.show()
+pepper = (pepper * 255).astype(np.uint8)
+
+filtered = contraharmonic_mean(pepper, 3, Q=1.5)
+
+show(pepper, "Pepper Noise")
+show(filtered, "Contraharmonic Mean Filter")
 
 
 # ==================== ASSIGNMENT 5 ====================
 
-# Add salt & pepper noise manually
-sp_noise = img.copy()
+sp = random_noise(img, mode='s&p', amount=0.2)
+# Add both salt AND pepper noise
 
-coords = np.random.randint(0, img.size, 500)
-sp_noise.flat[coords] = 255  # Salt
+sp = (sp * 255).astype(np.uint8)
 
-coords = np.random.randint(0, img.size, 500)
-sp_noise.flat[coords] = 0    # Pepper
+filtered = cv2.medianBlur(sp, 5)
+# Median filter:
+# Replace pixel with median of neighborhood
+# WHY: removes extreme values (salt & pepper)
 
-# Mean filter (not ideal for this noise)
-mean = cv2.blur(sp_noise, (5, 5))
+show(sp, "Salt & Pepper Noise")
+show(filtered, "Median Filter")
 
-# Median filter (best for salt & pepper noise)
-median = cv2.medianBlur(sp_noise, 5)
 
-# Display results
-images = [sp_noise, mean, median]
-titles = ["Salt & Pepper Noise", "Mean Filter", "Median Filter"]
+# ==================== ASSIGNMENT 6 ====================
 
-plt.figure(figsize=(9, 4))
-for i in range(3):
-    plt.subplot(1, 3, i+1)
-    plt.imshow(images[i], cmap='gray')
-    plt.title(titles[i])
-    plt.axis('off')
+sp_noise = random_noise(img, mode='s&p', amount=0.2)
+sp_noise = (sp_noise * 255).astype(np.uint8)
 
-plt.tight_layout()
-plt.show()
+min_filtered = cv2.erode(sp_noise, np.ones((3,3), np.uint8), iterations=1)
+# Erosion = min filter
+# Replaces pixel with minimum value in neighborhood → removes white noise (salt)
+
+max_filtered = cv2.dilate(sp_noise, np.ones((3,3), np.uint8), iterations=1)
+# Dilation = max filter
+# Replaces pixel with maximum value → removes black noise (pepper)
+
+show(sp_noise, "Salt & Pepper Noise")
+show(min_filtered, "Min Filter")
+show(max_filtered, "Max Filter")
+
+
+# ==================== ASSIGNMENT 7 ====================
+
+gaussian_noise = random_noise(img, mode='gaussian', mean=0, var=0.05)
+gaussian_noise = (gaussian_noise * 255).astype(np.uint8)
+
+mixed_noisy_image = random_noise(gaussian_noise / 255.0, mode='s&p', amount=0.1)
+# First Gaussian noise, then salt & pepper → mixed noise
+
+mixed_noisy_image = (mixed_noisy_image * 255).astype(np.uint8)
+
+show(img, "Original Image")
+show(mixed_noisy_image, "Mixed Noise")
+
+
+def alpha_trimmed_mean_filter(img, k=3, d=2):
+    img = img.astype(np.float32)
+    rows, cols = img.shape
+
+    filtered_img = np.zeros_like(img)
+
+    pad = k // 2
+
+    for i in range(pad, rows - pad):
+        for j in range(pad, cols - pad):
+            window = img[i-pad:i+pad+1, j-pad:j+pad+1].flatten()
+            # Extract neighborhood and flatten to 1D array
+
+            sorted_window = np.sort(window)
+            # Sort values
+
+            trim_count = int(d / 2)
+            # Number of elements to remove from each side
+
+            trimmed_window = sorted_window[trim_count : len(sorted_window)-trim_count]
+            # Remove extreme values (noise)
+
+            filtered_img[i, j] = np.mean(trimmed_window)
+            # Average remaining values
+
+    return filtered_img.astype(np.uint8)
+
+
+alpha_trimmed_filtered = alpha_trimmed_mean_filter(mixed_noisy_image, k=5, d=4)
+
+arithmetic_mean_filtered = cv2.blur(mixed_noisy_image, (5,5))
+median_filtered = cv2.medianBlur(mixed_noisy_image, 5)
+
+show(alpha_trimmed_filtered, "Alpha-Trimmed")
+show(arithmetic_mean_filtered, "Mean Filter")
+show(median_filtered, "Median Filter")
+
+
+# ==================== ASSIGNMENT 8 ====================
+
+img_float = img.astype(np.float64)
+
+rows, cols = img.shape
+
+variance_map = np.zeros_like(img_float)
+
+for j in range(cols):
+    variance_map[:, j] = 0.01 + (0.09 * (j / (cols - 1)))
+    # Create varying noise → left low noise, right high noise
+
+
+spatially_noisy_image = random_noise(img_float, mode='gaussian', var=variance_map)
+spatially_noisy_image = (spatially_noisy_image * 255).astype(np.uint8)
+
+show(img, "Original")
+show(spatially_noisy_image, "Spatial Noise")
+
+
+def adaptive_local_noise_reduction_filter(img, global_noise_variance, ksize=7):
+    img_float = img.astype(np.float32)
+
+    filtered_img = np.zeros_like(img_float)
+
+    pad = ksize // 2
+
+    for i in range(pad, img.shape[0] - pad):
+        for j in range(pad, img.shape[1] - pad):
+
+            window = img_float[i-pad:i+pad+1, j-pad:j+pad+1]
+
+            local_mean = np.mean(window)
+            local_variance = np.var(window)
+
+            # Compare local vs global noise
+            if local_variance < global_noise_variance:
+                weight = local_variance / (global_noise_variance + 1e-6)
+            else:
+                weight = global_noise_variance / (local_variance + 1e-6)
+
+            filtered_img[i, j] = img_float[i, j] - weight * (img_float[i, j] - local_mean)
+
+    return np.clip(filtered_img, 0, 255).astype(np.uint8)
+
+
+global_noise_variance_estimate = np.mean(variance_map) * (255**2)
+
+adaptive_filtered = adaptive_local_noise_reduction_filter(
+    spatially_noisy_image,
+    global_noise_variance_estimate,
+    ksize=7
+)
+
+show(adaptive_filtered, "Adaptive Filter")
+
+
+# ==================== ASSIGNMENT 9 ====================
+
+sp_noisy = random_noise(img, mode='s&p', amount=0.1)
+sp_noisy = (sp_noisy * 255).astype(np.uint8)
+
+filtered_3 = cv2.medianBlur(sp_noisy, 3)
+filtered_5 = cv2.medianBlur(sp_noisy, 5)
+filtered_7 = cv2.medianBlur(sp_noisy, 7)
+
+
+def calculate_psnr(original, processed):
+    mse = np.mean((original - processed)**2)
+    if mse == 0:
+        return 100
+    return 20 * np.log10(255.0 / np.sqrt(mse))
+
+
+original_uint8 = (img * 255).astype(np.uint8)
+
+print("PSNR:")
+print("Noisy:", calculate_psnr(original_uint8, sp_noisy))
+print("3x3:", calculate_psnr(original_uint8, filtered_3))
+print("5x5:", calculate_psnr(original_uint8, filtered_5))
+print("7x7:", calculate_psnr(original_uint8, filtered_7))
+
+
+# ==================== ASSIGNMENT 10 ====================
+
+def detect_noise_type(image):
+    hist = cv2.calcHist([image], [0], None, [256], [0, 256])
+    # Compute histogram → counts frequency of pixel intensities
+
+    total = image.size
+
+    zero_ratio = hist[0][0] / total
+    # Percentage of black pixels
+
+    max_ratio = hist[255][0] / total
+    # Percentage of white pixels
+
+    if zero_ratio > 0.02 and max_ratio > 0.02:
+        return 'salt_pepper'
+    elif zero_ratio > 0.02:
+        return 'pepper'
+    elif max_ratio > 0.02:
+        return 'salt'
+    else:
+        return 'gaussian'
+
+
+def apply_automatic_filter(image):
+    noise_type = detect_noise_type(image)
+
+    if noise_type == 'salt_pepper':
+        return cv2.medianBlur(image, 5), "Median Filter"
+    elif noise_type == 'salt':
+        return contraharmonic_mean(image, 5, Q=1.5), "Contraharmonic Salt"
+    elif noise_type == 'pepper':
+        return contraharmonic_mean(image, 5, Q=-1.5), "Contraharmonic Pepper"
+    else:
+        return cv2.blur(image, (5,5)), "Mean Filter"
+
+
+gaussian_noise_img = random_noise(img, mode='gaussian', var=0.03)
+
+mixed = random_noise(gaussian_noise_img, mode='s&p', amount=0.05)
+mixed = (mixed * 255).astype(np.uint8)
+
+filtered, name = apply_automatic_filter(mixed)
+
+show(img, "Original")
+show(mixed, "Mixed Noise")
+show(filtered, name)
